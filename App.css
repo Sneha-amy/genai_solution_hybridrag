@@ -1,0 +1,86 @@
+body {
+  font-family: "Inter", sans-serif;
+  margin: 0;
+  background: linear-gradient(135deg, #eef2ff, #fafbff);
+  color: #333;
+}
+
+.container {
+  max-width: 900px;
+  margin: auto;
+  padding: 30px;
+}
+
+h1 {
+  text-align: center;
+  font-size: 32px;
+  font-weight: 700;
+  margin-bottom: 30px;
+}
+
+.card {
+  background: rgba(255,255,255,0.8);
+  backdrop-filter: blur(12px);
+  padding: 25px;
+  border-radius: 16px;
+  margin-bottom: 30px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.07);
+}
+
+input {
+  width: 100%;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid #ccc;
+  margin-top: 6px;
+  margin-bottom: 12px;
+  font-size: 15px;
+}
+
+button {
+  width: 100%;
+  padding: 14px;
+  background: #2563eb;
+  color: white;
+  border-radius: 12px;
+  font-size: 16px;
+  border: none;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+button:hover {
+  background: #1e4fc4;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 18px;
+}
+
+th {
+  background: #eef3ff;
+  padding: 10px;
+  border-bottom: 2px solid #dbe3ff;
+}
+
+td {
+  padding: 10px;
+  border-bottom: 1px solid #eee;
+}
+
+.sev-high {
+  color: #ff3b3b;
+  font-weight: bold;
+}
+
+.sev-medium {
+  color: #ff8c00;
+  font-weight: bold;
+}
+
+.sev-low {
+  color: #2ecc71;
+  font-weight: bold;
+}
