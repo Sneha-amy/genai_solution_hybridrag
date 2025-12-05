@@ -1,0 +1,11 @@
+general_ledger
+"2023-01-15 | Inv#12345 | Sale to ABC Co. | Dr: Accounts Receivable $15,000 | Cr: Revenue $15,000
+2023-01-16 | Inv#12346 | Sale to XYZ Inc. | Dr: Accounts Receivable $10,000 | Cr: Revenue $10,000
+2023-01-20 | Payment | Dr: Cash $5,000 | Cr: Accounts Receivable $5,000
+2023-01-25 | Rent Expense | Dr: Operating Expenses $2,500 | Cr: Cash $2,500
+2023-01-30 | Payroll | Dr: Operating Expenses $7,500 | Cr: Cash $7,500"
+"2023-02-01 | Inv#22345 | Sale to LMN Corp. | Dr: Accounts Receivable $20,000 | Cr: Revenue $20,000
+2023-02-03 | Inv#22346 | Sale to DEF Ltd. | Dr: Accounts Receivable $15,000 | Cr: Revenue $15,000
+2023-02-10 | Payment | Dr: Cash $10,000 | Cr: Accounts Receivable $10,000
+2023-02-15 | Utilities Expense | Dr: Operating Expenses $1,200 | Cr: Cash $1,200
+2023-02-20 | Payroll | Dr: Operating Expenses $8,000 | Cr: Cash $8,000"

@@ -1,0 +1,3 @@
+unstructured_docs
+{'email': 'Subject: Accounting Concerns\n\nHi Team,\n\nI noticed some discrepancies in the revenue recognition for January. Can we review the cutoff procedures?\n\nThanks,\nJane', 'ocr_extract': 'RECEIPT\nDate: 01/15/2023\nAmount: $15,000\nCustomer: ABC Co.\nPayment Method: Wire Transfer\n', 'handwritten_note': 'Check AR balances for January. Something seems off. - J'}
+{'email': 'Subject: Follow-Up on AR\n\nHi Team,\n\nThe AR aging report shows unusually high balances. Can we investigate?\n\nRegards,\nJohn', 'ocr_extract': 'INVOICE\nDate: 02/01/2023\nAmount: $20,000\nCustomer: LMN Corp.\nDue Date: 02/15/2023\n', 'handwritten_note': 'Verify AR aging for February. - J'}

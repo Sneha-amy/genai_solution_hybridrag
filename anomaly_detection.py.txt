@@ -1,0 +1,396 @@
+import os
+import json
+import csv
+import math
+from typing import List, Dict, Any
+from openai import OpenAI
+import httpx
+
+tiktoken_cache_dir = "./token"
+os.environ["TIKTOKEN_CACHE_DIR"] = tiktoken_cache_dir 
+client = httpx.Client(verify=False)
+
+CUSTOM_API_KEY = "sk-QibkR-xrOxD2AsMgdaL0Pg"
+CUSTOM_MODEL_NAME = "azure/genailab-maas-gpt-4o"
+CUSTOM_BASE_URL = "https://genailab.tcs.in/"
+
+
+# -----------------------------
+# Utility: Safe JSON loader
+# -----------------------------
+def safe_json_loads(text: str):
+    """Extract JSON from LLM output safely"""
+    try:
+        text = text.strip().removeprefix("```json").removesuffix("```").strip()
+        return json.loads(text)
+    except json.JSONDecodeError:
+        start = text.find("[")
+        end = text.rfind("]")
+        if start != -1 and end != -1:
+            try:
+                return json.loads(text[start:end+1])
+            except json.JSONDecodeError:
+                pass
+        print("Warning: Could not parse JSON from LLM output.")
+        print("Raw output (first 500 chars):", text[:500])
+        return []
+
+
+# -----------------------------
+# Synthetic Data Generator
+# -----------------------------
+class SyntheticDataGenerator:
+    def __init__(self, api_key: str, model: str, temperature: float = 0.7):
+        self.client = OpenAI(
+            api_key=CUSTOM_API_KEY,
+            base_url=CUSTOM_BASE_URL,
+            http_client=client
+        )
+        self.model = model
+        self.temperature = temperature
+
+        # ✅ Your domain context
+        self.domain_context = {
+            "finance": "SMB financial statements, balance sheets, income statements, cash flow, IFRS-compliant reporting, anomalies.",
+            "generic": "Generic realistic business and human data."
+        }
+
+        # ✅ Your 3 schemas integrated
+        self.balance_sheet_schema = {
+            "companyName": "string",
+            "asOfDate": "YYYY-MM-DD",
+            "assets": {
+                "currentAssets": {
+                    "cash": "number",
+                    "accountsReceivable": "number",
+                    "inventory": "number",
+                    "prepaidExpenses": "number",
+                    "otherCurrentAssets": "number"
+                },
+                "nonCurrentAssets": {
+                    "propertyPlantEquipment": {
+                        "grossValue": "number",
+                        "accumulatedDepreciation": "number"
+                    },
+                    "intangibleAssets": "number",
+                    "otherNonCurrentAssets": "number"
+                }
+            },
+            "liabilities": {
+                "currentLiabilities": {
+                    "accountsPayable": "number",
+                    "shortTermLoans": "number",
+                    "accruedExpenses": "number",
+                    "taxesPayable": "number",
+                    "otherCurrentLiabilities": "number"
+                },
+                "longTermLiabilities": {
+                    "bankLoans": "number",
+                    "leaseObligations": "number",
+                    "otherLongTermLiabilities": "number"
+                }
+            },
+            "equity": {
+                "ownerCapital": "number",
+                "retainedEarnings": "number",
+                "additionalPaidInCapital": "number",
+                "otherEquity": "number"
+            }
+        }
+
+        self.income_stmt_schema = {
+            "companyName": "string",
+            "periodStart": "YYYY-MM-DD",
+            "periodEnd": "YYYY-MM-DD",
+            "revenue": {
+                "salesRevenue": "number",
+                "serviceRevenue": "number",
+                "otherRevenue": "number"
+            },
+            "costOfGoodsSold": {
+                "materials": "number",
+                "directLabor": "number",
+                "otherCOGS": "number"
+            },
+            "grossProfit": "number",
+            "operatingExpenses": {
+                "salariesWages": "number",
+                "rent": "number",
+                "utilities": "number",
+                "marketing": "number",
+                "otherOperatingExpenses": "number"
+            },
+            "operatingIncome": "number",
+            "otherIncomeExpenses": {
+                "interestIncome": "number",
+                "interestExpense": "number",
+                "otherNonOperatingItems": "number"
+            },
+            "netIncome": "number"
+        }
+
+        self.cash_flow_statement_schema = {
+            "companyName": "string",
+            "periodStart": "YYYY-MM-DD",
+            "periodEnd": "YYYY-MM-DD",
+            "operating_activities": {
+                "cash_received_from_customers": "number",
+                "cash_paid_to_suppliers": "number",
+                "cash_paid_for_operating_expenses": "number",
+                "cash_paid_for_taxes": "number",
+                "net_cash_from_operating_activities": "number"
+            },
+            "investing_activities": {
+                "purchase_of_equipment": "number",
+                "sale_of_equipment": "number",
+                "net_cash_from_investing_activities": "number"
+            },
+            "financing_activities": {
+                "loan_received_from_bank": "number",
+                "loan_repayment": "number",
+                "owner_drawings": "number",
+                "net_cash_from_financing_activities": "number"
+            },
+            "summary": {
+                "net_increase_in_cash": "number",
+                "cash_beginning_of_period": "number",
+                "cash_end_of_period": "number"
+            }
+        }
+
+        # ✅ Updated template to include schemas
+        self.templates = {
+            "unstructured": """
+You are a professional synthetic financial‑statement generator.
+
+Your task is to generate realistic SMB financial‑statement packages that include:
+- A balance sheet
+- An income statement
+- A cash‑flow statement
+- A business domain classification
+- A simple anomalies_present flag ("yes" or "no")
+
+Each company must belong to one of the following SMB business domains:
+
+1. Retail & Consumer Goods
+2. Food & Beverage
+3. Construction & Trades
+4. Professional Services
+5. Manufacturing
+
+Ensure that the financial patterns match the selected domain
+(e.g., inventory for retail, high payroll for services, equipment for manufacturing).
+
+Use a domain‑weighted anomaly generator.
+
+For each company:
+- Assign one business domain from the SMB list.
+- Insert anomalies based on domain‑specific likelihoods:
+
+Retail & Consumer Goods:
+  High: inventory miscounts, shrinkage, COGS mismatches, cash rounding errors
+  Medium: supplier timing issues, seasonal spikes
+  Low: R&D expenses
+
+Food & Beverage:
+  High: spoilage write‑offs, cash sales mismatches, tip inconsistencies
+  Medium: utilities/rent spikes
+  Low: intangible assets
+
+Construction & Trades:
+  High: WIP misstatements, over/under‑billing, depreciation errors
+  Medium: irregular cash flow timing
+  Low: inventory anomalies
+
+Professional Services:
+  High: missing timesheet revenue, payroll underreporting, incorrect inventory presence
+  Medium: AR aging issues
+  Low: COGS anomalies
+
+Manufacturing:
+  High: raw material vs finished goods mismatches, overstated WIP, depreciation errors
+  Medium: energy cost spikes
+  Low: payroll anomalies
+
+Selection rules per company:
+- Include 2–4 high‑likelihood anomalies
+- Include 1–2 medium‑likelihood anomalies
+- Include 0–1 low‑likelihood anomalies
+- Apply them naturally across the financial statements
+
+-----------------------------------------
+ANOMALIES TO INCLUDE
+-----------------------------------------
+
+Include anomalies from ALL of the following categories.  
+Each company must contain a realistic mix of several anomaly types.
+
+1. NUMERICAL ANOMALIES
+   - Totals that do not add up (e.g., Assets ≠ Liabilities + Equity)
+   - Negative values where they normally cannot occur
+   - Unusually large or small values
+   - Rounding inconsistencies
+   - Duplicate entries
+
+2. STRUCTURAL / SCHEMA ANOMALIES
+   - Missing required fields
+   - Extra unexpected fields
+   - Incorrect data types
+   - Misclassified items
+
+3. TEMPORAL ANOMALIES
+   - Overlapping fiscal periods
+   - Period end earlier than period start
+   - Inconsistent dates across statements
+   - Missing depreciation over time
+
+4. LOGICAL ACCOUNTING ANOMALIES
+   - Gross profit > revenue
+   - Operating income > gross profit
+   - Ending cash mismatch between cash‑flow and balance sheet
+   - Net income not flowing into retained earnings
+   - Depreciation increasing asset values
+
+5. BUSINESS‑CONTEXT ANOMALIES
+   - Expenses that do not match the business type
+   - Inventory for service‑only businesses
+   - No payroll expense for labor‑intensive businesses
+   - Seasonal businesses with flat revenue
+
+6. CASH‑FLOW‑SPECIFIC ANOMALIES
+   - Net cash flow not equal to change in cash
+   - Positive operating cash flow with deeply negative net income
+   - Financing inflows with no corresponding liabilities
+   - Missing reconciliation items
+
+7. CROSS‑STATEMENT INCONSISTENCIES
+   - Net income not matching retained earnings changes
+   - COGS inconsistent with inventory changes
+   - Loan repayments in cash‑flow but no loan balance
+   - Ending cash mismatch across statements
+
+8. FRAUD‑INDICATIVE ANOMALIES
+   - Sudden revenue spikes at period end
+   - Unusual related‑party transactions
+   - Large unexplained write‑offs
+   - Inflated asset values without depreciation
+
+Generate {n} SMB financial statement packages.
+
+Each package must contain:
+- balance_sheet (JSON matching this schema):
+{balance_sheet_schema}
+
+- income_statement (JSON matching this schema):
+{income_stmt_schema}
+
+- cash_flow_statement (JSON matching this schema):
+{cash_flow_statement_schema}
+
+Domain context:
+{domain_context}
+
+Document purpose:
+{purpose}
+
+Noise required: {noise}
+
+Include anomalies such as missing fields, inconsistent totals, or unusual values.
+
+Only return a JSON list:
+[
+  {{
+    "id": "<id>",
+    "balance_sheet": {{...}},
+    "income_statement": {{...}},
+    "cash_flow_statement": {{...}},
+    "anomalies_present": [
+        "<anomaly_type_1>",
+        "<anomaly_type_2>",
+        ...
+    ]
+
+  }},
+  ...
+]
+Ensure:
+- Values are realistic for SMBs.
+- Domain‑specific patterns are respected.
+- Anomalies appear naturally and not artificially forced.
+- JSON is valid and machine‑readable.
+
+"""
+        }
+
+    # Call LLM
+    def _call_llm(self, prompt: str) -> str:
+        response = self.client.chat.completions.create(
+            model=self.model,
+            temperature=self.temperature,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        return response.choices[0].message.content
+
+    # Generate structured 3-statement JSON per company
+    def generate_financial_packages(self, n: int = 5, domain: str = "finance",
+                                    purpose: str = "RAG seeding", noise: bool = True,
+                                    max_retries: int = 3) -> List[Dict[str, Any]]:
+
+        prompt = self.templates["unstructured"].format(
+            n=n,
+            balance_sheet_schema=json.dumps(self.balance_sheet_schema, indent=2),
+            income_stmt_schema=json.dumps(self.income_stmt_schema, indent=2),
+            cash_flow_statement_schema=json.dumps(self.cash_flow_statement_schema, indent=2),
+            domain_context=self.domain_context.get(domain, "generic"),
+            noise=str(noise),
+            purpose=purpose
+        )
+
+        for attempt in range(max_retries):
+            output = self._call_llm(prompt)
+            docs = safe_json_loads(output)
+            if docs:
+                return docs
+            print(f"Attempt {attempt+1} failed, retrying...")
+
+        return []
+
+    # Save each company as ONE JSON file
+    def save_financial_packages(self, docs: List[Dict[str, Any]], folder: str):
+        os.makedirs(folder, exist_ok=True)
+
+        for doc in docs:
+            doc_id = doc.get("id", "unknown")
+            filename = os.path.join(folder, f"company_{doc_id}.json")
+
+            with open(filename, "w", encoding="utf-8") as f:
+                json.dump(doc, f, indent=2)
+
+
+# -----------------------------
+# Main: Batch-wise generation for 50 companies
+# -----------------------------
+if __name__ == "__main__":
+    API_KEY = CUSTOM_API_KEY
+    MODEL = "azure/genailab-maas-gpt-35-turbo"
+
+    generator = SyntheticDataGenerator(api_key=API_KEY, model=MODEL, temperature=0.4)
+
+    total_companies = 50
+    batch_size = 10
+
+    for batch_num in range(math.ceil(total_companies / batch_size)):
+        current_batch_size = min(batch_size, total_companies - batch_num * batch_size)
+        print(f"Generating batch {batch_num+1} with {current_batch_size} companies...")
+
+        financial_docs = generator.generate_financial_packages(
+            n=current_batch_size,
+            purpose="RAG database"
+        )
+
+        generator.save_financial_packages(
+            financial_docs,
+            folder=f"financial_data_batch_{batch_num+1}"
+        )
+
+    print("✅ Batch-wise generation complete!")
